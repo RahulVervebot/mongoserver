@@ -94,6 +94,35 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
+// Manual signup
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    let existingUser = await Users.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
+    const user = await Users.create({ name, email, password }); // Hash password in real app
+    res.status(201).json({ message: 'User created', user });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Manual login
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await Users.findOne({ email });
+    if (!user || user.password !== password) { // Use bcrypt compare in real app
+      return res.status(400).json({ error: 'Invalid credentials' });
+    }
+    res.json({ user });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 
 // For Spendly APP
 
