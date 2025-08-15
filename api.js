@@ -123,6 +123,42 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// Forgot Password API
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // Check if email is provided
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    // Find user by email
+    const user = await Users.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Generate a reset token (expires in 1 hour)
+    const crypto = require('crypto');
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const tokenExpiry = Date.now() + 3600000; // 1 hour from now
+
+    // Save token & expiry in DB
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = tokenExpiry;
+    await user.save();
+
+    // TODO: Send resetToken via email (Mailgun, SendGrid, Nodemailer, etc.)
+    console.log(`Password reset link: http://yourfrontend.com/reset-password/${resetToken}`);
+
+    res.status(200).json({ message: 'Password reset link sent to email' });
+  } catch (error) {
+    console.error('❌ Forgot password error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 
 // For Spendly APP
 
