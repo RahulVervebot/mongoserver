@@ -4,9 +4,11 @@ const usersSchema = new mongoose.Schema({
   googleId: String,
   name: String,
   email: { type: String, unique: true },
+ usernmae: { type: String, unique: true },
   picture: String,
-   password: String,
+  password: String,
   resetPasswordToken: String,
+  role: String,
   resetPasswordExpires: Date
 });
 

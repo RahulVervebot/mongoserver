@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const connectDB = require('./db'); // ✅ importing your db connection
 const Product = require('./models/Product'); // adjust path if needed
+const ProductCategory = require('./models/ProductCategory')
 const Users =require('./models/Users');
 const app = express(); // ✅ define app before using it
 const Transaction = require('./models/Transaction');
@@ -57,6 +58,121 @@ app.get('/api/products', async (req, res) => {
     res.status(500).json({ error: 'Server error while fetching products' });
   }
 });
+// GET /api/products/search?name=app
+app.get('/api/products/search', async (req, res) => {
+  try {
+    const { name } = req.query;
+
+    if (!name || name.length < 3) {
+      return res.status(400).json({ error: "Please provide at least 3 characters to search" });
+    }
+
+    // Regex: ^ means "starts with", i = case-insensitive
+    const products = await Product.find({
+      product_name: { $regex: '^' + name, $options: 'i' }
+    });
+
+    res.status(200).json(products);
+  } catch (err) {
+    console.error("❌ Error searching products:", err.message);
+    res.status(500).json({ error: "Server error while searching products" });
+  }
+});
+
+
+// API to save product category to MongoDB
+app.post('/api/products-category', async (req, res) => {
+  try {
+    const { category, image} = req.body;
+
+    const newProductCategory = new Product({
+      category,
+      image,
+    });
+
+    const savedProductCategory = await newProductCategory.save(); // ✅ Save to MongoDB
+
+    res.status(201).json({
+      message: 'Product category saved successfully!',
+      product: savedProductCategory
+    });
+  } catch (err) {
+    console.error('❌ Error saving product:', err.message);
+    res.status(500).json({ error: 'Server error while saving product' });
+  }
+});
+
+// get product category api
+app.get('/api/product-category', async (req, res) => {
+  try {
+    const category = await ProductCategory.find(); // fetch all products
+    res.status(200).json(category);
+  } catch (err) {
+    console.error('❌ Error fetching products:', err.message);
+    res.status(500).json({ error: 'Server error while fetching products' });
+  }
+});
+
+// POST API to create a new order
+app.post('/api/orders', async (req, res) => {
+  try {
+    const { name, size, image, price, sale, category, subtotal, tax, total } = req.body;
+
+    // validate required fields
+    if (!name || !price || !subtotal || !tax || !total) {
+      return res.status(400).json({ error: "Required fields are missing" });
+    }
+
+    // create new order
+    const newOrder = new Orders({
+      name,
+      size,
+      image,
+      price,
+      sale,
+      category,
+      subtotal,
+      tax,
+      total
+    });
+
+    await newOrder.save(); // save to DB
+
+    res.status(201).json({
+      message: "✅ Order created successfully",
+      order: newOrder
+    });
+  } catch (err) {
+    console.error("❌ Error creating order:", err.message);
+    res.status(500).json({ error: "Server error while creating order" });
+  }
+});
+
+// GET all orders
+app.get('/api/orders', async (req, res) => {
+  try {
+    const orders = await Orders.find().sort({ createdAt: -1 }); // latest first
+    res.status(200).json(orders);
+  } catch (err) {
+    console.error("❌ Error fetching orders:", err.message);
+    res.status(500).json({ error: "Server error while fetching orders" });
+  }
+});
+
+// GET order by ID
+app.get('/api/orders/:id', async (req, res) => {
+  try {
+    const order = await Orders.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+    res.status(200).json(order);
+  } catch (err) {
+    console.error("❌ Error fetching order:", err.message);
+    res.status(500).json({ error: "Server error while fetching order" });
+  }
+});
+
 
 //bulk api
 app.post('/api/products/bulk', async (req, res) => {
@@ -97,17 +213,69 @@ app.post('/api/auth/google', async (req, res) => {
 // Manual signup
 app.post('/api/auth/signup', async (req, res) => {
   try {
-    const { name, email, password } = req.body;
-    let existingUser = await Users.findOne({ email });
+    const { username, name, email, role, password } = req.body;
+
+    // check if email or username already exists
+    let existingUser = await Users.findOne({ 
+      $or: [{ email }, { username }] 
+    });
+
     if (existingUser) {
-      return res.status(400).json({ error: 'Email already exists' });
+      return res.status(400).json({ error: 'Email or Username already exists' });
     }
-    const user = await Users.create({ name, email, password }); // Hash password in real app
+
+    const user = await Users.create({ username, name, email, password, role }); 
+    // ⚡️ make sure to hash password in production
+
     res.status(201).json({ message: 'User created', user });
   } catch (err) {
+    console.error('❌ Signup error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// GET /api/auth/users
+app.get('/api/auth/users', async (req, res) => {
+  try {
+    const users = await Users.find().select('-password -resetPasswordToken -resetPasswordExpires'); 
+    // remove sensitive fields
+    res.status(200).json(users);
+  } catch (err) {
+    console.error('❌ Error fetching users:', err.message);
+    res.status(500).json({ error: 'Server error while fetching users' });
+  }
+});
+
+// GET /api/auth/users/:id
+// GET /api/auth/users/search?q=rah
+app.get('/api/auth/users/search', async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.length < 3) {
+      return res.status(400).json({ error: 'Please provide at least 3 characters to search' });
+    }
+
+    const users = await Users.find({
+      $or: [
+        { name: { $regex: '^' + q, $options: 'i' } },   // starts with q (case-insensitive)
+        { email: { $regex: '^' + q, $options: 'i' } }
+      ]
+    }).select('-password -resetPasswordToken -resetPasswordExpires');
+
+    if (users.length === 0) {
+      return res.status(404).json({ message: 'No users found' });
+    }
+
+    res.status(200).json(users);
+  } catch (err) {
+    console.error('❌ Error searching users:', err.message);
+    res.status(500).json({ error: 'Server error while searching users' });
+  }
+});
+
+
+
+
 
 // Manual login
 app.post('/api/auth/login', async (req, res) => {
