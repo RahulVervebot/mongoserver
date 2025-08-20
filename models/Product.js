@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const productSchema = new mongoose.Schema({
   name: { type: String, required: true },
+  barcode: String,
   size: String,
   image: String,
   price: { type: Number, required: true },

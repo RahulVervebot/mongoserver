@@ -59,23 +59,27 @@ app.get('/api/products', async (req, res) => {
   }
 });
 // GET /api/products/search?name=app
-app.get('/api/products/search', async (req, res) => {
+// GET /api/products/search?query=Herbal
+app.get("/api/products/search", async (req, res) => {
   try {
-    const { name } = req.query;
+    const { query } = req.query;
 
-    if (!name || name.length < 3) {
-      return res.status(400).json({ error: "Please provide at least 3 characters to search" });
+    if (!query || query.length < 3) {
+      return res.status(400).json({ message: "Please enter at least 3 characters" });
     }
 
-    // Regex: ^ means "starts with", i = case-insensitive
     const products = await Product.find({
-      product_name: { $regex: '^' + name, $options: 'i' }
+      $or: [
+        { name: { $regex: query, $options: "i" } },
+        { category: { $regex: query, $options: "i" } },
+        { barcode: { $regex: query, $options: "i" } },
+      ]
     });
 
-    res.status(200).json(products);
+    res.json(products);
   } catch (err) {
-    console.error("❌ Error searching products:", err.message);
-    res.status(500).json({ error: "Server error while searching products" });
+    console.error("Search error:", err.message);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
