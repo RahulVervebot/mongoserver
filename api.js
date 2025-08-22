@@ -13,6 +13,16 @@ connectDB();
 // Middlewares
 app.use(cors());
 app.use(express.json());
+// configure multer: save uploads in ./uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/"); // make sure folder exists
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname)); // unique name
+  },
+});
+const upload = multer({ storage });
 
 // API to save product to MongoDB
 app.post('/api/products', async (req, res) => {
@@ -85,30 +95,42 @@ app.get("/api/products/search", async (req, res) => {
 
 
 // API to save product category to MongoDB
-app.post('/api/products-category', async (req, res) => {
-  try {
-    const { category, image, toplist,topicon,topbanner,topbannerbottom} = req.body;
+app.post(
+  "/api/products-category",
+  upload.fields([
+    { name: "image", maxCount: 1 },
+    { name: "topicon", maxCount: 1 },
+    { name: "topbanner", maxCount: 1 },
+    { name: "topbannerbottom", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    try {
+      const { category, toplist } = req.body;
 
-    const newProductCategory = new ProductCategory({
-      category,
-      image,
-      toplist,
-      topicon,
-      topbanner,
-      topbannerbottom
-    });
+      // convert uploaded files → base64 strings
+      const toBase64 = (file) => {
+        if (!file) return null;
+        const fileData = fs.readFileSync(file.path);
+        return `data:${file.mimetype};base64,${fileData.toString("base64")}`;
+      };
 
-    const savedProductCategory = await newProductCategory.save(); // ✅ Save to MongoDB
+      const newCategory = new ProductCategory({
+        category,
+        toplist: toplist === "true", // from form-data
+        image: toBase64(req.files?.image?.[0]),
+        topicon: toBase64(req.files?.topicon?.[0]),
+        topbanner: toBase64(req.files?.topbanner?.[0]),
+        topbannerbottom: toBase64(req.files?.topbannerbottom?.[0]),
+      });
 
-    res.status(201).json({
-      message: 'Product category saved successfully!',
-      product: savedProductCategory
-    });
-  } catch (err) {
-    console.error('❌ Error saving product:', err.message);
-    res.status(500).json({ error: 'Server error while saving product' });
+      const saved = await newCategory.save();
+      res.status(201).json({ message: "✅ Category saved", product: saved });
+    } catch (err) {
+      console.error("❌ Error saving category:", err.message);
+      res.status(500).json({ error: "Server error while saving category" });
+    }
   }
-});
+);
 
 // get product category api
 app.get('/api/product-category', async (req, res) => {

@@ -2,7 +2,6 @@ const mongoose = require('mongoose');
 
 const productcategorySchema = new mongoose.Schema({
   category: { type: String, required: true },
-  size: String,
   image: String,
   toplist: Boolean,
   topicon: String,
