@@ -87,11 +87,15 @@ app.get("/api/products/search", async (req, res) => {
 // API to save product category to MongoDB
 app.post('/api/products-category', async (req, res) => {
   try {
-    const { category, image} = req.body;
+    const { category, image, toplist,topicon,topbanner,topbannerbottom} = req.body;
 
-    const newProductCategory = new Product({
+    const newProductCategory = new ProductCategory({
       category,
       image,
+      toplist,
+      topicon,
+      topbanner,
+      topbannerbottom
     });
 
     const savedProductCategory = await newProductCategory.save(); // ✅ Save to MongoDB
@@ -120,35 +124,52 @@ app.get('/api/product-category', async (req, res) => {
 // POST API to create a new order
 app.post('/api/orders', async (req, res) => {
   try {
-    const { name, size, image, price, sale, category, subtotal, tax, total } = req.body;
+    const { items = [], paymentMethod = 'cash' } = req.body;
 
-    // validate required fields
-    if (!name || !price || !subtotal || !tax || !total) {
-      return res.status(400).json({ error: "Required fields are missing" });
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'No items provided' });
     }
 
-    // create new order
-    const newOrder = new Orders({
-      name,
-      size,
-      image,
-      price,
-      sale,
-      category,
+    // normalize & validate items
+    const normalized = items.map((it, idx) => {
+      const price = Number(it.price);
+      const qty = Number(it.qty || 1);
+      if (!it.name) throw new Error(`Item ${idx + 1}: name is required`);
+      if (!Number.isFinite(price) || price < 0) throw new Error(`Item ${idx + 1}: price must be a positive number`);
+      if (!Number.isInteger(qty) || qty <= 0) throw new Error(`Item ${idx + 1}: qty must be a positive integer`);
+      const lineTotal = +(price * qty).toFixed(2);
+      return {
+        name: it.name,
+        size: it.size || null,
+        image: it.image || null,
+        price,
+        sale: it.sale || null,
+        category: it.category || null,
+        qty,
+        lineTotal
+      };
+    });
+
+    // compute totals server-side
+    const subtotal = +normalized.reduce((s, it) => s + it.lineTotal, 0).toFixed(2);
+    const tax = +(subtotal * TAX_RATE).toFixed(2);
+    const total = +(subtotal + tax).toFixed(2);
+
+    const newOrder = await Orders.create({
+      items: normalized,
+      paymentMethod,
       subtotal,
       tax,
       total
     });
 
-    await newOrder.save(); // save to DB
-
     res.status(201).json({
-      message: "✅ Order created successfully",
+      message: '✅ Order created successfully',
       order: newOrder
     });
   } catch (err) {
-    console.error("❌ Error creating order:", err.message);
-    res.status(500).json({ error: "Server error while creating order" });
+    console.error('❌ Error creating order:', err);
+    res.status(400).json({ error: err.message || 'Server error while creating order' });
   }
 });
 
@@ -322,7 +343,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     await user.save();
 
     // TODO: Send resetToken via email (Mailgun, SendGrid, Nodemailer, etc.)
-    console.log(`Password reset link: http://yourfrontend.com/reset-password/${resetToken}`);
+    console.log(`Password reset link: /reset-password/${resetToken}`);
 
     res.status(200).json({ message: 'Password reset link sent to email' });
   } catch (error) {
