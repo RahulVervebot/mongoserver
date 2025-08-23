@@ -10,6 +10,9 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const PORT = 5050;
+const mongoose = require('mongoose');
+const Orders = require('./models/Orders'); // adjust path
+const { Types: { ObjectId } } = mongoose;
 // Connect to MongoDB
 connectDB();
 // Middlewares
@@ -147,54 +150,127 @@ app.get('/api/product-category', async (req, res) => {
 });
 
 // POST API to create a new order
+// const TAX_RATE = Number(process.env.TAX_RATE ?? 0); // e.g. 0.08875 for 8.875%
+
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+const genOrderId = () => {
+  const now = new Date();
+  const pad = (x) => String(x).padStart(2, '0');
+  const y = now.getFullYear();
+  const m = pad(now.getMonth() + 1);
+  const d = pad(now.getDate());
+  const hh = pad(now.getHours());
+  const mm = pad(now.getMinutes());
+  const ss = pad(now.getSeconds());
+  const rand = Math.random().toString(36).slice(2, 4).toUpperCase();
+  return `ORD-${y}${m}${d}-${hh}${mm}${ss}-${rand}`;
+};
+
 app.post('/api/orders', async (req, res) => {
   try {
-    const { items = [], paymentMethod = 'cash' } = req.body;
+    const {
+      userId,
+      items = [],
+      paymentMethod = 'cash', // keep it in enum: cash|card|upi
+      shippingAddress
+    } = req.body;
 
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'No items provided' });
+    // 1) Validate userId
+    if (!userId || !ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: 'Invalid or missing userId (must be a valid Mongo ObjectId).' });
     }
 
-    // normalize & validate items
-    const normalized = items.map((it, idx) => {
+    // 2) Validate items
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'No items provided. Provide at least one item.' });
+    }
+
+    // 3) Validate paymentMethod
+    const ALLOWED_PAYMENTS = ['cash', 'card', 'upi'];
+    if (!ALLOWED_PAYMENTS.includes(paymentMethod)) {
+      return res.status(400).json({
+        error: `Invalid paymentMethod. Allowed: ${ALLOWED_PAYMENTS.join(', ')}.`
+      });
+    }
+
+    // 4) Normalize & validate each item to match orderItemSchema
+    const normalizedItems = items.map((it, idx) => {
+      const path = `items[${idx}]`;
+      if (!it || typeof it !== 'object') {
+        throw new Error(`${path}: must be an object`);
+      }
+
+      const { productId, name, size, image } = it;
+
+      if (!productId || !ObjectId.isValid(productId)) {
+        throw new Error(`${path}.productId: missing or invalid ObjectId`);
+      }
+      if (!name || typeof name !== 'string') {
+        throw new Error(`${path}.name: required string`);
+      }
+
       const price = Number(it.price);
-      const qty = Number(it.qty || 1);
-      if (!it.name) throw new Error(`Item ${idx + 1}: name is required`);
-      if (!Number.isFinite(price) || price < 0) throw new Error(`Item ${idx + 1}: price must be a positive number`);
-      if (!Number.isInteger(qty) || qty <= 0) throw new Error(`Item ${idx + 1}: qty must be a positive integer`);
-      const lineTotal = +(price * qty).toFixed(2);
+      if (!Number.isFinite(price) || price < 0) {
+        throw new Error(`${path}.price: must be a non‑negative number`);
+      }
+
+      const quantity = Number(it.quantity ?? it.qty ?? 1);
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        throw new Error(`${path}.quantity: must be a positive integer`);
+      }
+
       return {
-        name: it.name,
-        size: it.size || null,
-        image: it.image || null,
+        productId,
+        name,
+        size: size || undefined,
+        image: image || undefined,
         price,
-        sale: it.sale || null,
-        category: it.category || null,
-        qty,
-        lineTotal
+        quantity,
       };
     });
 
-    // compute totals server-side
-    const subtotal = +normalized.reduce((s, it) => s + it.lineTotal, 0).toFixed(2);
-    const tax = +(subtotal * TAX_RATE).toFixed(2);
-    const total = +(subtotal + tax).toFixed(2);
+    // 5) Compute totals
+    const subtotal = round2(
+      normalizedItems.reduce((sum, it) => sum + it.price * it.quantity, 0)
+    );
+    const tax = round2(subtotal * 0.18);
+    const total = round2(subtotal + tax);
 
-    const newOrder = await Orders.create({
-      items: normalized,
-      paymentMethod,
+    // 6) Build order payload
+    const payload = {
+      orderId: genOrderId(),
+      userId,
+      items: normalizedItems,
       subtotal,
       tax,
-      total
-    });
+      total,
+      status: 'pending',
+      paymentMethod, // cash|card|upi
+    };
 
-    res.status(201).json({
-      message: '✅ Order created successfully',
-      order: newOrder
+    if (shippingAddress && typeof shippingAddress === 'object') {
+      payload.shippingAddress = {
+        street: shippingAddress.street || '',
+        city: shippingAddress.city || '',
+        state: shippingAddress.state || '',
+        postalCode: shippingAddress.postalCode || '',
+        country: shippingAddress.country || '',
+      };
+    }
+
+    // 7) Create order
+    const newOrder = await Orders.create(payload);
+
+    return res.status(201).json({
+      message: '✅ Order created successfully.',
+      order: newOrder,
     });
   } catch (err) {
     console.error('❌ Error creating order:', err);
-    res.status(400).json({ error: err.message || 'Server error while creating order' });
+    return res.status(400).json({
+      error: err?.message || 'Server error while creating order.',
+    });
   }
 });
 
