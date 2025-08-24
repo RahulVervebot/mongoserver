@@ -2,11 +2,11 @@ const mongoose = require('mongoose');
 
 const productSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  barcode: String,
+  barcode:  { type: String, required: true,unique: true },
   size: String,
   image: String,
   price: { type: Number, required: true },
-  sale: { type: Boolean, default: false },
+  sale: { type: Number, default: false },
   category: String,
 }, {
   timestamps: true

@@ -33,22 +33,16 @@ const upload = multer({ storage });
 // API to save product to MongoDB
 app.post('/api/products', async (req, res) => {
   try {
-    const { name, size, image, price, sale, category } = req.body;
+    const { name,barcode, size, image, price, sale, category } = req.body;
 
     const newProduct = new Product({
       name,
+      barcode,
       size,
       image,
       price,
       sale,
       category
-    });
-
-    const newUsers = new Users({
-      id,
-       name, 
-       email, 
-       picture 
     });
 
 
@@ -60,7 +54,7 @@ app.post('/api/products', async (req, res) => {
     });
   } catch (err) {
     console.error('❌ Error saving product:', err.message);
-    res.status(500).json({ error: 'Server error while saving product' });
+    res.status(500).json({ error: err.message});
   }
 });
 
