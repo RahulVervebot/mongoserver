@@ -58,6 +58,30 @@ app.post('/api/products', async (req, res) => {
   }
 });
 
+
+// GET /api/products?limit=10 latest products
+app.get('/api/latest-products', async (req, res) => {
+  try {
+    const limitRaw = parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 10;
+
+    // If your Product schema has { timestamps: true }, this uses createdAt.
+    // Otherwise, fallback to _id which roughly correlates with creation time.
+    const sortField = Product.schema.path('createdAt') ? { createdAt: -1 } : { _id: -1 };
+
+    const products = await Product.find({})
+      .sort(sortField)
+      .limit(limit)
+      .lean();
+
+    res.status(200).json(products);
+  } catch (err) {
+    console.error('❌ Error fetching products:', err.message);
+    res.status(500).json({ error: 'Server error while fetching products' });
+  }
+});
+
+
 // GET API to fetch all products
 app.get('/api/products', async (req, res) => {
   try {
